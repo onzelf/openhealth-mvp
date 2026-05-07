@@ -68,4 +68,43 @@ src/
 │   └── hub/
 └── vfp-governance/
     ├── gatekeeper/
-    └── verifier/
+    └── verifier/ 
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+Before you begin, ensure you have:
+
+- ✅ **Docker Engine** installed
+- ✅ **OpenTofu** (or Terraform) installed
+- ✅ **Python 3** (for helper scripts used by Test #2)
+
+
+### Build + Provision
+
+From repo root:
+
+```bash
+cd infra/tofu
+tofu init
+tofu apply -auto-approve
+```
+
+This starts the docker network and containers (hub, flower client/server components).
+
+### Results
+
+```bash 
+docker run --rm -v vfp-runs:/runs alpine sh -c "cat /runs/local-medmnist-001/dataset_split_summary.csv"
+```
+
+| run_id | org_id | org_label | dataset | partition | num_partitions | train_count | test_count | n_classes |
+|---|---|---|---|---|---|---|---|---|
+| local-medmnist-001 | org_b | Org B | pneumoniamnist | 1 | 2 | 2354 | 312 | 2 |
+| local-medmnist-001 | org_a | Org A | pneumoniamnist | 0 | 2 | 2354 | 312 | 2 |
+
+
+
+
+
