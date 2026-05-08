@@ -1,110 +1,123 @@
-# OpenHealth / VFP Federated Computing MVP
+# Open Health / VFP Federated Computing MVP
 
-Minimal, reproducible Federated Computing infrastructure scaffold for OpenHealth/VFP, using OpenTofu-managed Docker services, Flower, MedMNIST, and a pass-through governance placeholder.
+This repository provides a minimal, open, reproducible baseline scaffold for **Federated Computing infrastructure** in the Open Health / VFP context.
+
+The MVP is intentionally small. Its purpose is to demonstrate a local federated execution path using Docker services managed by OpenTofu, with a real biomedical educational dataset and a clear evidence trail.
 
 ## Purpose
 
-This repository provides an educational and research-oriented baseline for Federated Computing infrastructure.
+The project provides a reference scaffold for:
 
-The MVP demonstrates how to run a small federated-learning experiment across simulated organisations while preserving a clear separation between:
+- Federated Computing infrastructure education;
+- reproducible federated-learning experiments;
+- Open Health MVP development;
+- future AWS/OpenTofu deployment;
+- future FCaC-style governance extensions.
 
-- `vfp-core`: the working federated execution and orchestration substrate;
-- `vfp-governance`: a placeholder for future governance/admission-control extensions;
-- `infra/opentofu`: infrastructure-as-code deployment authority;
-- `runs`: generated evidence artefacts.
+The MVP is **not** a production Open Health platform.
 
-The goal is not to build a production OpenHealth platform. The goal is to provide a transparent scaffold that students and researchers can inspect, run, extend, and later port to AWS.
+## Architectural split
 
-## Current status
+The repository separates the working federated infrastructure from future governance work.
 
-The current local MVP already supports:
+| Module | Role in this MVP | Status |
+|---|---|---|
+| `vfp-core` | Runs the federated infrastructure and FL workload | Implemented by the MVP |
+| `vfp-governance` | Provides a placeholder admission/governance seam | Pass-through only |
+| `infra/opentofu/local-docker` | Provisions local Docker services using OpenTofu | First deployment target |
+| `infra/opentofu/aws` | Future AWS/OpenTofu deployment target | Planned |
+| `datasets/medmnist` | Dataset preparation and partitioning | Planned |
+| `experiments/medmnist-baseline` | Reproducible baseline experiment configuration | Planned |
+| `runs/` | Run artefacts: metrics, events, configs, outputs | Generated at runtime |
 
-- OpenTofu-managed local Docker deployment;
-- one local Docker network;
-- shared run artefact volume;
-- `vfp-core-hub` FastAPI orchestration service;
-- `vfp-governance-gatekeeper` pass-through admission placeholder;
-- Flower server for aggregation;
-- two simulated organisation clients;
-- MedMNIST / PneumoniaMNIST dataset partitioning;
-- FedAvg execution;
+## What this MVP implements
+
+### Milestone 1 — Local OpenTofu/Docker FL baseline
+Milestone 1 proves that the MVP can execute a reproducible federated-learning experiment over a biomedical educational dataset and generate inspectable evidence artefacts.
+
+Limitations of Milestone 1:
+
+- clients start according to container startup order;
+- experiment activation is not yet controlled by the hub;
+- the frontend is not yet implemented;
+- vfp-governance is pass-through only;
+- FCaC is not implemented.
+
+Milestone 2 addresses the startup-order limitation by introducing hub-controlled experiment activation.
+The first milestone is a local OpenTofu-managed Docker deployment with:
+
+- local OpenTofu-managed Docker deployment;
+- Flower/FedAvg execution;
+- two simulated organisations: `org_a` and `org_b`;
+- MedMNIST/PneumoniaMNIST as the biomedical educational dataset;
+- dataset partitioning across the two organisations;
+- local training on each client;
+- aggregation by the Flower server;
 - metrics generation;
 - event logging;
-- dataset split summary;
-- reproducible run artefacts under `runs/<run_id>/`.
+- dataset split summary generation;
+- run artefacts stored under `runs/<run_id>/`.
 
-The first validated run uses:
+The local MVP uses OpenTofu with the `kreuzwerker/docker` provider to provision Docker services. This establishes the same infrastructure-as-code workflow that can later be extended to AWS.
 
-- dataset: `pneumoniamnist`;
-- organisations: `org_a`, `org_b`;
-- clients: 2;
-- aggregation: FedAvg;
-- rounds: configurable through OpenTofu;
-- governance mode: pass-through;
-- FCaC: not enabled.
+## What this MVP does not implement
 
-## Repository structure
+This MVP does **not** implement:
 
-```text
-src/
-├── datasets/
-│   └── medmnist/
-├── docs/
-├── experiments/
-├── infra/
-│   └── opentofu/
-│       ├── aws/
-│       ├── local-docker/
-│       └── modules/
-│           ├── docker_network/
-│           ├── docker_service/
-│           └── docker_volume/
-├── runs/
-├── vfp-core/
-│   ├── services/
-│   │   ├── fl-client/
-│   │   └── fl-server/
-│   ├── frontend/
-│   └── hub/
-└── vfp-governance/
-    ├── gatekeeper/
-    └── verifier/ 
+- FCaC;
+- cryptographic admission control;
+- signed capability tokens;
+- proof-of-possession;
+- healthcare consent workflows;
+- production governance-as-code;
+- differential privacy;
+- secure aggregation;
+- homomorphic encryption;
+- trusted execution environments;
+- EHR/FHIR/DICOM integration;
+- production UX;
+- clinical validation.
 
-## 🚀 Getting Started
+`vfp-governance` is included only as an explicit future extension point.
 
-### Prerequisites
+## Governance placeholder
 
-Before you begin, ensure you have:
+In the MVP, `vfp-governance` operates in pass-through mode.
 
-- ✅ **Docker Engine** installed
-- ✅ **OpenTofu** (or Terraform) installed
-- ✅ **Python 3** (for helper scripts used by Test #2)
+Example response:
 
-
-### Build + Provision
-
-From repo root:
-
-```bash
-cd infra/tofu
-tofu init
-tofu apply -auto-approve
+```json
+{
+  "decision": "ALLOW",
+  "mode": "pass_through",
+  "reason": "vfp-governance placeholder: FCaC verification not enabled"
+}
 ```
 
-This starts the docker network and containers (hub, flower client/server components).
+### Milestone 2: hub-controlled experiment activation
+This Milestone removes startup timing assumptions from the local MVP.
 
-### Results
+OpenTofu still provisions the local Docker substrate and starts the services, but the experiment lifecycle is now controlled by the `vfp-core` hub.
 
-```bash 
-docker run --rm -v vfp-runs:/runs alpine sh -c "cat /runs/local-medmnist-001/dataset_split_summary.csv"
+Runtime flow:
+
 ```
+tofu apply
+  ├── starts vfp-governance-gatekeeper
+  ├── starts vfp-core-hub
+  ├── starts vfp-core-flower-server
+  └── starts vfp-core-flower-client-org_a / org_b
 
-| run_id | org_id | org_label | dataset | partition | num_partitions | train_count | test_count | n_classes |
-|---|---|---|---|---|---|---|---|---|
-| local-medmnist-001 | org_b | Org B | pneumoniamnist | 1 | 2 | 2354 | 312 | 2 |
-| local-medmnist-001 | org_a | Org A | pneumoniamnist | 0 | 2 | 2354 | 312 | 2 |
+clients
+  ├── register with the hub
+  └── wait for experiment activation
 
+user / CLI / future frontend
+  └── POST /experiments/{run_id}/start
 
+hub
+  └── sets experiment status to running
 
-
-
+clients
+  └── connect to Flower server and run the FL experiment
+```

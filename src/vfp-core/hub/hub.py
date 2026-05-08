@@ -76,6 +76,12 @@ class ExperimentInitialiseRequest(BaseModel):
     rounds: int = FLOWER_ROUNDS
     min_clients: int = MIN_CLIENTS
 
+class ClientRegistration(BaseModel):
+    run_id: str = RUN_ID
+    org_id: str
+    org_label: Optional[str] = None
+    data_partition: Optional[int] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 # ---------------------------------------------------------------------
 # In-memory registry
@@ -83,6 +89,17 @@ class ExperimentInitialiseRequest(BaseModel):
 
 backend_registry: Dict[str, Dict[str, Any]] = {}
 
+# ---------------------------------------------------------------------
+# In-memory runtime state
+# ---------------------------------------------------------------------
+
+experiment_state: Dict[str, Any] = {
+    "run_id": RUN_ID,
+    "status": "waiting",
+    "registered_clients": {},
+    "min_clients": MIN_CLIENTS,
+    "flower_server_ready": True,
+}
 
 # ---------------------------------------------------------------------
 # Paths and evidence helpers
@@ -116,6 +133,29 @@ def append_event(event_type: str, run_id: str = RUN_ID, **kwargs: Any) -> None:
     path = run_dir(run_id) / "events.jsonl"
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
+
+
+def current_experiment_status(run_id: str = RUN_ID) -> Dict[str, Any]:
+    registered_clients = experiment_state.get("registered_clients", {})
+    registered_client_ids = sorted(registered_clients.keys())
+    registered_client_count = len(registered_client_ids)
+    min_clients = int(experiment_state.get("min_clients", MIN_CLIENTS))
+
+    return {
+        "run_id": run_id,
+        "status": experiment_state.get("status", "waiting"),
+        "flower_server_ready": experiment_state.get("flower_server_ready", False),
+        "registered_clients": registered_client_ids,
+        "registered_client_count": registered_client_count,
+        "min_clients": min_clients,
+        "can_start": (
+            experiment_state.get("status") == "waiting"
+            and experiment_state.get("flower_server_ready", False)
+            and registered_client_count >= min_clients
+        ),
+        "fcac_enabled": FCAC_ENABLED,
+        "governance_mode": GOVERNANCE_MODE,
+    }
 
 
 def parse_orgs() -> Dict[str, Dict[str, Any]]:
@@ -510,4 +550,109 @@ def experiment_metrics(run_id: str) -> Dict[str, Any]:
     return {
         "run_id": run_id,
         "metrics": rows,
+    }
+
+@app.post("/clients/register")
+def clients_register(req: ClientRegistration) -> Dict[str, Any]:
+    experiment_state["registered_clients"][req.org_id] = {
+        "org_id": req.org_id,
+        "org_label": req.org_label,
+        "data_partition": req.data_partition,
+        "metadata": req.metadata,
+        "registered_at": utc_now(),
+    }
+
+    append_event(
+        "client_registered",
+        run_id=req.run_id,
+        org_id=req.org_id,
+        org_label=req.org_label,
+        data_partition=req.data_partition,
+        metadata=req.metadata,
+    )
+
+    return {
+        "status": "registered",
+        "client": experiment_state["registered_clients"][req.org_id],
+        "experiment": current_experiment_status(req.run_id),
+    }
+
+
+@app.get("/experiments/{run_id}/status")
+def experiment_status(run_id: str) -> Dict[str, Any]:
+    return current_experiment_status(run_id)
+
+
+@app.post("/experiments/{run_id}/start")
+def experiment_start(run_id: str) -> Dict[str, Any]:
+    status = current_experiment_status(run_id)
+
+    if status["status"] == "running":
+        return {
+            "run_id": run_id,
+            "status": "running",
+            "message": "Experiment already running",
+            "experiment": status,
+        }
+
+    if status["status"] == "completed":
+        return {
+            "run_id": run_id,
+            "status": "completed",
+            "message": "Experiment already completed",
+            "experiment": status,
+        }
+
+    if not status["flower_server_ready"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Flower server is not ready",
+        )
+
+    if status["registered_client_count"] < status["min_clients"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Not enough registered clients: "
+                f"{status['registered_client_count']} < {status['min_clients']}"
+            ),
+        )
+
+    call_governance(
+        action="start_experiment",
+        metadata=status,
+    )
+
+    experiment_state["status"] = "running"
+
+    append_event(
+        "experiment_started",
+        run_id=run_id,
+        registered_clients=status["registered_clients"],
+        registered_client_count=status["registered_client_count"],
+        min_clients=status["min_clients"],
+    )
+
+    return {
+        "run_id": run_id,
+        "status": "running",
+        "message": "Experiment activated",
+        "experiment": current_experiment_status(run_id),
+    }
+
+
+@app.post("/experiments/{run_id}/stop")
+def experiment_stop(run_id: str) -> Dict[str, Any]:
+    experiment_state["status"] = "stopped"
+
+    append_event(
+        "experiment_stopped",
+        run_id=run_id,
+    )
+
+    return {
+        "run_id": run_id,
+        "status": "stopped",
+        "message": "Experiment stopped",
+        "experiment": current_experiment_status(run_id),
     }

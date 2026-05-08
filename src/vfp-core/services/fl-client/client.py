@@ -21,6 +21,9 @@ from torchvision import transforms
 # Environment
 # ---------------------------------------------------------------------
 
+HUB_URL = os.getenv("HUB_URL", "http://vfp-core-hub:8080")
+CLIENT_POLL_SECONDS = int(os.getenv("CLIENT_POLL_SECONDS", "2"))
+
 RUN_ID = os.getenv("RUN_ID", "local-medmnist-001")
 RUNS_DIR = Path(os.getenv("RUNS_DIR", "/app/runs"))
 
@@ -37,7 +40,7 @@ GOVERNANCE_URL = os.getenv(
 
 DATASET_FLAG = os.getenv("MEDMNIST_DATASET", "pneumoniamnist")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
-LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "1"))
+LOCAL_EPOCHS = int(os.getenv("LOCAL_EPOCHS", "3"))
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -344,8 +347,9 @@ def main() -> None:
 
     client = VfpFlowerClient(model, train_loader, test_loader)
 
-    # Give the Flower server time to start in local Docker/OpenTofu deployments.
-    time.sleep(int(os.getenv("CLIENT_START_DELAY_SECONDS", "5")))
+    # regisatyer with Hub and wait for starting.
+    register_with_hub()
+    wait_for_experiment_start()
 
     write_event("client_connecting", flower_server=flower_server_address())
 
@@ -355,6 +359,69 @@ def main() -> None:
     )
 
     write_event("client_completed")
+
+def register_with_hub() -> None:
+    payload = {
+        "run_id": RUN_ID,
+        "org_id": ORG_ID,
+        "org_label": ORG_LABEL,
+        "data_partition": DATA_PARTITION,
+        "metadata": {
+            "dataset": DATASET_FLAG,
+            "num_partitions": NUM_PARTITIONS,
+        },
+    }
+
+    try:
+        response = requests.post(
+            f"{HUB_URL}/clients/register",
+            json=payload,
+            timeout=5,
+        )
+        response.raise_for_status()
+        write_event("hub_registration_completed", response=response.json())
+    except Exception as exc:
+        write_event("hub_registration_failed", error=str(exc))
+        raise
+
+
+def wait_for_experiment_start() -> None:
+    write_event(
+        "client_waiting_for_start",
+        hub_url=HUB_URL,
+        poll_seconds=CLIENT_POLL_SECONDS,
+    )
+
+    while True:
+        try:
+            response = requests.get(
+                f"{HUB_URL}/experiments/{RUN_ID}/status",
+                timeout=5,
+            )
+            response.raise_for_status()
+            status = response.json()
+
+            write_event(
+                "client_polled_experiment_status",
+                status=status.get("status"),
+                can_start=status.get("can_start"),
+                registered_client_count=status.get("registered_client_count"),
+                min_clients=status.get("min_clients"),
+            )
+
+            if status.get("status") == "running":
+                write_event("client_activation_received")
+                return
+
+            if status.get("status") in {"stopped", "completed"}:
+                raise RuntimeError(
+                    f"Experiment is {status.get('status')}; client will not start"
+                )
+
+        except Exception as exc:
+            write_event("client_activation_poll_error", error=str(exc))
+
+        time.sleep(CLIENT_POLL_SECONDS)
 
 
 if __name__ == "__main__":

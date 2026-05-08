@@ -35,7 +35,7 @@ locals {
   dataset        = "medmnist"
   dataset_subset = "pneumoniamnist"
 
-  flower_rounds = 5
+  flower_rounds = 10
 
   orgs = {
     org_a = {
@@ -236,7 +236,8 @@ resource "docker_container" "flower_client" {
 
   env = [
     "RUN_ID=${local.run_id}",
-    "CLIENT_START_DELAY_SECONDS=8",
+    "HUB_URL=http://vfp-core-hub:8080",
+    "CLIENT_POLL_SECONDS=2",
     "RUNS_DIR=/app/runs",
     "ORG_ID=${each.key}",
     "ORG_LABEL=${each.value.label}",
