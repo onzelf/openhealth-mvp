@@ -28,7 +28,9 @@ cd src/infra/opentofu/local-docker
 tofu apply -auto-approve
 ```
 open:
-
+```
+http://localhost:3000
+```
 
 ![http://localhost:3000](Layout.png)
 
