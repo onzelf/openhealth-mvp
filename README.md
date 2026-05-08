@@ -30,22 +30,30 @@ The repository separates the working federated infrastructure from future govern
 | `experiments/medmnist-baseline` | Reproducible baseline experiment configuration | Planned |
 | `runs/` | Run artefacts: metrics, events, configs, outputs | Generated at runtime |
 
+## Documentation
+
+- [API contract](src/docs/api_contract.md)
+- [Static dashboard usage](src/docs/static_dashboard.md)
+
+## Quick start
+
+See the [API contract](src/docs/api_contract.md) and [static dashboard usage](src/docs/static_dashboard.md) for local execution and dashboard usage.
+
+The local MVP is deployed from:
+
+```bash
+cd src/infra/opentofu/local-docker
+tofu init
+tofu apply -auto-approve
+```
+
 ## What this MVP implements
 
 ### Milestone 1 — Local OpenTofu/Docker FL baseline
 Milestone 1 proves that the MVP can execute a reproducible federated-learning experiment over a biomedical educational dataset and generate inspectable evidence artefacts.
 
-Limitations of Milestone 1:
-
-- clients start according to container startup order;
-- experiment activation is not yet controlled by the hub;
-- the frontend is not yet implemented;
-- vfp-governance is pass-through only;
-- FCaC is not implemented.
-
-Milestone 2 addresses the startup-order limitation by introducing hub-controlled experiment activation.
-The first milestone is a local OpenTofu-managed Docker deployment with:
-
+ 
+This milestone is a local OpenTofu-managed Docker deployment with:
 - local OpenTofu-managed Docker deployment;
 - Flower/FedAvg execution;
 - two simulated organisations: `org_a` and `org_b`;
@@ -58,6 +66,12 @@ The first milestone is a local OpenTofu-managed Docker deployment with:
 - dataset split summary generation;
 - run artefacts stored under `runs/<run_id>/`.
 
+Limitations of Milestone 1:
+- clients start according to container startup order;
+- experiment activation is not yet controlled by the hub;
+- the frontend is not yet implemented;
+- vfp-governance is pass-through only;
+- FCaC is not implemented.
 The local MVP uses OpenTofu with the `kreuzwerker/docker` provider to provision Docker services. This establishes the same infrastructure-as-code workflow that can later be extended to AWS.
 
 ## What this MVP does not implement
