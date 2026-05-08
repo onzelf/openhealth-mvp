@@ -35,9 +35,21 @@ The repository separates the working federated infrastructure from future govern
 - [API contract](src/docs/api_contract.md)
 - [Static dashboard usage](src/docs/static_dashboard.md)
 
+
+---
+## Implemented MVP architecture
+
+The implemented MVP should be interpreted as an FL infrastructure baseline rather than as a complete OpenHealth governance platform. It validates the execution and evidence path required for federated health-data experimentation, while governance-as-code and FCaC-style verifiable admission remain future extensions.
+
+![Implemented MVP architecture](src/docs/Figure2.png)
+
+**Figure 2.** Implemented OpenHealth / VFP MVP architecture. The current implementation provides a reproducible local Federated Learning infrastructure scaffold using OpenTofu-managed Docker services, a Flower-based federated-learning backend, MedMNIST/PneumoniaMNIST partitions across simulated organisations, hub-controlled experiment activation, metrics capture, lifecycle event logging, and a lightweight static dashboard. Governance is represented only as a pass-through extension point (`vfp-governance`) and is not enforced in the present implementation.
+---
+
+
 ## Quick start
 
-See the [API contract](src/docs/api_contract.md) and [static dashboard usage](src/docs/static_dashboard.md) for local execution and dashboard usage.
+See the [API contract](src/docs/api_contract.md) and [static dashboard usage](src/docs/static_dashboard.md) for local execution and dashboard usage
 
 The local MVP is deployed from:
 
