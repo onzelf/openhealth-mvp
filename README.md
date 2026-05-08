@@ -43,7 +43,7 @@ The implemented MVP should be interpreted as an FL infrastructure baseline rathe
 
 ![The MVP architecture](src/docs/figure2_workflow_v2.png)
 
-**Figure 2.** Implemented OpenHealth / VFP MVP architecture. The current implementation provides a reproducible local Federated Learning infrastructure scaffold using OpenTofu-managed Docker services, a Flower-based federated-learning backend, MedMNIST/PneumoniaMNIST partitions across simulated organisations, hub-controlled experiment activation, metrics capture, lifecycle event logging, and a lightweight static dashboard. Governance is represented only as a pass-through extension point (`vfp-governance`) and is not enforced in the present implementation.
+Figure 2 Implemented OpenHealth / VFP MVP architecture. The current implementation provides a reproducible local Federated Learning infrastructure scaffold using OpenTofu-managed Docker services, a Flower-based federated-learning backend, MedMNIST/PneumoniaMNIST partitions across simulated organisations, hub-controlled experiment activation, metrics capture, lifecycle event logging, and a lightweight static dashboard. Governance is represented only as a pass-through extension point (`vfp-governance`) and is not enforced in the present implementation.
 ---
 
 
