@@ -121,3 +121,31 @@ hub
 clients
   └── connect to Flower server and run the FL experiment
 ```
+
+### Milestone 3 — Static MVP dashboard
+
+Status: completed.
+
+Milestone 3 adds a minimal static dashboard for the local OpenHealth / VFP MVP. The dashboard is served as a lightweight nginx frontend and exposes the current one-run lifecycle: `waiting → running → completed`.
+
+The dashboard provides:
+
+- experiment START control through the hub API;
+- live auto-polling of experiment status;
+- registered client status;
+- round progress;
+- metrics table for loss, accuracy, train loss, and train accuracy;
+- lifecycle/event timeline;
+- experiment configuration view;
+- evidence artefact summary;
+- explicit governance status: `vfp-governance` pass-through, FCaC not enabled.
+
+This milestone intentionally avoids a complex frontend framework. The dashboard is an evidence viewer for the FL infrastructure MVP, not a production OpenHealth application UI.
+
+Limitations:
+
+- one run lifecycle only;
+- no reset/new-run from the UI;
+- experiment parameters are displayed but not yet fully editable;
+- metrics are table-based rather than graph-based;
+- Grafana/Prometheus observability is deferred to a later milestone.

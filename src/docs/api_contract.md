@@ -30,6 +30,77 @@ vfp-governance-gatekeeper
 
 which runs in pass-through mode.
 
+
+## Milestone 3 frontend contract
+
+Milestone 3 adds a lightweight static frontend served by:
+
+```
+vfp-core-frontend
+```
+
+Local URL:
+
+http://localhost:3000
+
+The frontend is an evidence dashboard for the local MVP. It does not implement a production OpenHealth user interface.
+
+The frontend uses nginx to proxy API calls to the hub:
+
+/frontend browser → /api/... → vfp-core-hub:8080
+
+Therefore, the frontend calls the hub API through paths such as:
+
+/api/status
+/api/experiments/{run_id}
+/api/experiments/{run_id}/status
+/api/experiments/{run_id}/metrics
+/api/experiments/{run_id}/events
+/api/experiments/{run_id}/start
+
+These are proxied internally to:
+
+/status
+/experiments/{run_id}
+/experiments/{run_id}/status
+/experiments/{run_id}/metrics
+/experiments/{run_id}/events
+/experiments/{run_id}/start
+Frontend lifecycle behavior
+
+The Milestone 3 frontend supports the current one-run lifecycle:
+
+waiting → running → completed
+
+The START button calls:
+
+POST /api/experiments/{run_id}/start
+
+The dashboard auto-polls the hub API to update:
+
+experiment status;
+registered clients;
+round progress;
+metrics table;
+event timeline;
+configuration;
+evidence summary.
+
+Manual refresh is not part of the Milestone 3 contract. The dashboard uses automatic polling.
+
+Frontend limitations
+
+The Milestone 3 frontend does not provide:
+
+reset/new-run capability;
+full experiment parameter editing;
+graph rendering for accuracy/loss;
+Grafana or Prometheus integration;
+authentication;
+production UI behavior.
+
+Reusable experiment lifecycle, editable parameters, and richer observability are deferred to a later milestone.
+
 ## Status
 
 ### `GET /health`

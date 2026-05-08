@@ -195,6 +195,9 @@ def write_experiment_config(req: ExperimentInitialiseRequest) -> None:
         "aggregation_strategy": "FedAvg",
         "rounds": req.rounds,
         "min_clients": req.min_clients,
+        "local_epochs": int(os.getenv("LOCAL_EPOCHS", "1")),
+        "batch_size": int(os.getenv("BATCH_SIZE", "32")),
+        "learning_rate": float(os.getenv("LEARNING_RATE", "0.001")),
         "flower_backend_url": FLOWER_BACKEND_URL,
         "governance": {
             "mode": GOVERNANCE_MODE,
@@ -654,5 +657,21 @@ def experiment_stop(run_id: str) -> Dict[str, Any]:
         "run_id": run_id,
         "status": "stopped",
         "message": "Experiment stopped",
+        "experiment": current_experiment_status(run_id),
+    }
+
+@app.post("/experiments/{run_id}/complete")
+def experiment_complete(run_id: str) -> Dict[str, Any]:
+    experiment_state["status"] = "completed"
+
+    append_event(
+        "experiment_completed",
+        run_id=run_id,
+    )
+
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "message": "Experiment completed",
         "experiment": current_experiment_status(run_id),
     }

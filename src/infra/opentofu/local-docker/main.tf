@@ -144,6 +144,9 @@ resource "docker_container" "hub" {
 
   env = [
     "RUN_ID=${local.run_id}",
+    "LOCAL_EPOCHS=1",
+    "BATCH_SIZE=32",
+    "LEARNING_RATE=0.001",
     "RUNS_DIR=/app/runs",
     "DATASET=${local.dataset}",
     "DATASET_SUBSET=${local.dataset_subset}",
@@ -198,7 +201,8 @@ resource "docker_container" "flower_server" {
     "FLOWER_ROUNDS=${local.flower_rounds}",
     "MIN_CLIENTS=${length(local.enabled_orgs)}",
     "SERVER_ADDRESS=0.0.0.0:8080",
-    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check"
+    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check",
+    "HUB_URL=http://vfp-core-hub:8080"
   ]
 
   depends_on = [docker_container.gatekeeper, docker_container.hub]
@@ -244,6 +248,9 @@ resource "docker_container" "flower_client" {
     "DATA_PARTITION=${each.value.partition}",
     "NUM_PARTITIONS=${length(local.enabled_orgs)}",
     "MEDMNIST_DATASET=${local.dataset_subset}",
+    "LOCAL_EPOCHS=1",
+    "BATCH_SIZE=32",
+    "LEARNING_RATE=0.001",
     "FLOWER_SERVER_URL=vfp-core-flower-server:8080",
     "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check"
   ]
@@ -251,6 +258,37 @@ resource "docker_container" "flower_client" {
   depends_on = [docker_container.flower_server]
   must_run = true
   restart  = "no"
+}
+
+
+# ------------------------------------------------------------
+# vfp-core: Frontend / organisation nodes
+# ------------------------------------------------------------
+
+resource "docker_image" "frontend" {
+  name = "vfp-core-frontend:local"
+
+  build {
+    context = "${local.repo_root}/vfp-core/frontend"
+  }
+}
+
+resource "docker_container" "frontend" {
+  name  = "vfp-core-frontend"
+  image = docker_image.frontend.image_id
+
+  networks_advanced {
+    name = docker_network.vfp.name
+  }
+
+  ports {
+    internal = 80
+    external = 3000
+  }
+
+  depends_on = [
+    docker_container.hub
+  ]
 }
 
 # ------------------------------------------------------------
@@ -287,4 +325,8 @@ output "flower_server_url" {
 
 output "enabled_organisations" {
   value = keys(local.enabled_orgs)
+}
+
+output "frontend_url" {
+  value = "http://localhost:3000"
 }

@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,7 @@ from flwr.server.strategy import FedAvg
 # Environment
 # ---------------------------------------------------------------------
 
+HUB_URL = os.getenv("HUB_URL", "http://vfp-core-hub:8080")
 RUN_ID = os.getenv("RUN_ID", "local-medmnist-001")
 RUNS_DIR = Path(os.getenv("RUNS_DIR", "/app/runs"))
 
@@ -129,7 +131,7 @@ def append_metrics_row(
         )
 
 
-def write_experiment_config() -> None:
+def write_experiment_config_z() -> None:
     config = {
         "run_id": RUN_ID,
         "flower_rounds": FLOWER_ROUNDS,
@@ -171,6 +173,23 @@ def write_participants(participants: Dict[str, Dict[str, Any]]) -> None:
     with participants_path().open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
+
+def notify_hub_completed() -> None:
+    try:
+        response = requests.post(
+            f"{HUB_URL}/experiments/{RUN_ID}/complete",
+            timeout=5,
+        )
+        response.raise_for_status()
+        write_event(
+            "hub_completion_notified",
+            response=response.json(),
+        )
+    except Exception as exc:
+        write_event(
+            "hub_completion_notify_failed",
+            error=str(exc),
+        )
 
 # ---------------------------------------------------------------------
 # Metric aggregation
@@ -343,7 +362,7 @@ class EvidenceFedAvg(FedAvg):
 def main() -> None:
     run_dir()
     ensure_metrics_header()
-    write_experiment_config()
+    #write_experiment_config()
 
     write_event(
         "server_starting",
@@ -374,7 +393,7 @@ def main() -> None:
         "server_completed",
         flower_rounds=FLOWER_ROUNDS,
     )
-
+    notify_hub_completed()
 
 if __name__ == "__main__":
     main()
