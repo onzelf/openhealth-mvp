@@ -7,7 +7,7 @@ vfp-core-hub
 Local URL:
 
 ```
-http://localhost:8080
+http://localhost:8082
 ```
 
 Internal Docker URL:
@@ -110,7 +110,7 @@ Returns hub health.
 Example:
 
 ```
-curl http://localhost:8080/health | jq
+curl http://localhost:8082/health | jq
 ```
 
 Example response:
@@ -126,7 +126,7 @@ Returns global hub status and current default experiment settings.
 Example:
 
 ```
-curl http://localhost:8080/status | jq
+curl http://localhost:8082/status | jq
 ```
 
 ----------
@@ -193,7 +193,7 @@ Returns current experiment readiness and lifecycle state.
 Example:
 
 ```
-curl http://localhost:8080/experiments/local-medmnist-001/status | jq
+curl http://localhost:8082/experiments/local-medmnist-001/status | jq
 ```
 
 Example response before START:
@@ -221,7 +221,7 @@ This endpoint simulates the future frontend START button.
 Example:
 
 ```
-curl -X POST http://localhost:8080/experiments/local-medmnist-001/start | jq
+curl -X POST http://localhost:8082/experiments/local-medmnist-001/start | jq
 ```
 
 Expected behavior:
@@ -246,7 +246,7 @@ Stops or disables the experiment lifecycle state.
 Example:
 
 ```
-curl -X POST http://localhost:8080/experiments/local-medmnist-001/stop | jq
+curl -X POST http://localhost:8082/experiments/local-medmnist-001/stop | jq
 ```
 
 Current behavior:
@@ -267,7 +267,7 @@ Returns experiment configuration and participant metadata.
 Example:
 
 ```
-curl http://localhost:8080/experiments/local-medmnist-001 | jq
+curl http://localhost:8082/experiments/local-medmnist-001 | jq
 ```
 
 Expected response includes:
@@ -290,7 +290,7 @@ runs/<run_id>/metrics.csv
 Example:
 
 ```
-curl http://localhost:8080/experiments/local-medmnist-001/metrics | jq
+curl http://localhost:8082/experiments/local-medmnist-001/metrics | jq
 ```
 
 Metrics may include:
@@ -320,7 +320,7 @@ runs/<run_id>/events.jsonl
 Example:
 
 ```
-curl "http://localhost:8080/experiments/local-medmnist-001/events?limit=50" | jq
+curl "http://localhost:8082/experiments/local-medmnist-001/events?limit=50" | jq
 ```
 
 Events may include:
@@ -382,4 +382,4 @@ The current API does not provide:
 -   Docker lifecycle management;
 -   multi-run isolation.
 
-The API is a minimal control-plane contract for the educational MVP.  
+The API is a minimal control-plane contract for the educational MVP.

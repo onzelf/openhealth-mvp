@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {}
+    "react-dom": "^18.2.0",
+    "recharts": "^3.8.1",
+    "vite": "^7.0.0"
+  }
 }

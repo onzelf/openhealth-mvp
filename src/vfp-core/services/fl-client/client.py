@@ -23,6 +23,7 @@ from torchvision import transforms
 
 HUB_URL = os.getenv("HUB_URL", "http://vfp-core-hub:8080")
 CLIENT_POLL_SECONDS = int(os.getenv("CLIENT_POLL_SECONDS", "2"))
+CLIENT_CONNECT_RETRY_SECONDS = int(os.getenv("CLIENT_CONNECT_RETRY_SECONDS", "2"))
 
 RUN_ID = os.getenv("RUN_ID", "local-medmnist-001")
 RUNS_DIR = Path(os.getenv("RUNS_DIR", "/app/runs"))
@@ -63,6 +64,23 @@ def run_dir() -> Path:
     path = RUNS_DIR / RUN_ID
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def experiment_config_path() -> Path:
+    return run_dir() / "experiment_config.json"
+
+
+def configured_local_epochs() -> int:
+    if not experiment_config_path().exists():
+        return LOCAL_EPOCHS
+
+    try:
+        config = json.loads(experiment_config_path().read_text(encoding="utf-8"))
+        local_epochs = int(config.get("local_epochs", LOCAL_EPOCHS))
+        return max(1, local_epochs)
+    except Exception as exc:
+        write_event("experiment_config_read_failed", error=str(exc))
+        return LOCAL_EPOCHS
 
 
 def json_safe(value: Any) -> Any:
@@ -219,7 +237,11 @@ def set_parameters(model: nn.Module, parameters: List[np.ndarray]) -> None:
     model.load_state_dict(new_state_dict, strict=True)
 
 
-def train_one_round(model: nn.Module, train_loader: DataLoader) -> Tuple[float, float]:
+def train_one_round(
+    model: nn.Module,
+    train_loader: DataLoader,
+    local_epochs: int,
+) -> Tuple[float, float]:
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
@@ -228,7 +250,7 @@ def train_one_round(model: nn.Module, train_loader: DataLoader) -> Tuple[float, 
     correct = 0
     total = 0
 
-    for _ in range(LOCAL_EPOCHS):
+    for _ in range(local_epochs):
         for images, labels in train_loader:
             images = images.to(DEVICE)
             labels = labels.squeeze().long().to(DEVICE)
@@ -296,10 +318,15 @@ class VfpFlowerClient(fl.client.NumPyClient):
     ) -> Tuple[List[np.ndarray], int, Dict[str, Any]]:
         admission_check("train_local")
         set_parameters(self.model, parameters)
+        local_epochs = configured_local_epochs()
 
-        write_event("fit_started", config=config)
-        loss, accuracy = train_one_round(self.model, self.train_loader)
-        write_event("fit_completed", loss=loss, accuracy=accuracy)
+        write_event("fit_started", config=config, local_epochs=local_epochs)
+        loss, accuracy = train_one_round(
+            self.model,
+            self.train_loader,
+            local_epochs,
+        )
+        write_event("fit_completed", loss=loss, accuracy=accuracy, local_epochs=local_epochs)
 
         admission_check("submit_update")
 
@@ -349,16 +376,37 @@ def main() -> None:
 
     # regisatyer with Hub and wait for starting.
     register_with_hub()
-    wait_for_experiment_start()
+    if not wait_for_experiment_start():
+        return
 
-    write_event("client_connecting", flower_server=flower_server_address())
-
-    fl.client.start_numpy_client(
-        server_address=flower_server_address(),
-        client=client,
-    )
+    start_flower_client_with_retry(client)
 
     write_event("client_completed")
+
+
+def start_flower_client_with_retry(client: VfpFlowerClient) -> None:
+    while True:
+        write_event("client_connecting", flower_server=flower_server_address())
+
+        try:
+            fl.client.start_numpy_client(
+                server_address=flower_server_address(),
+                client=client,
+            )
+            return
+        except Exception as exc:
+            status = current_experiment_status()
+            write_event(
+                "client_connection_failed",
+                error=str(exc),
+                retry_seconds=CLIENT_CONNECT_RETRY_SECONDS,
+                experiment_status=status.get("status"),
+            )
+
+            if status.get("status") in {"stopped", "completed", "failed"}:
+                raise
+
+            time.sleep(CLIENT_CONNECT_RETRY_SECONDS)
 
 def register_with_hub() -> None:
     payload = {
@@ -385,7 +433,7 @@ def register_with_hub() -> None:
         raise
 
 
-def wait_for_experiment_start() -> None:
+def wait_for_experiment_start() -> bool:
     write_event(
         "client_waiting_for_start",
         hub_url=HUB_URL,
@@ -409,19 +457,39 @@ def wait_for_experiment_start() -> None:
                 min_clients=status.get("min_clients"),
             )
 
+            registered_clients = status.get("registered_clients") or []
+            if status.get("status") == "waiting" and ORG_ID not in registered_clients:
+                write_event("client_reregistering", registered_clients=registered_clients)
+                register_with_hub()
+
             if status.get("status") == "running":
                 write_event("client_activation_received")
-                return
+                return True
 
-            if status.get("status") in {"stopped", "completed"}:
-                raise RuntimeError(
-                    f"Experiment is {status.get('status')}; client will not start"
+            if status.get("status") in {"stopped", "completed", "failed"}:
+                write_event(
+                    "client_waiting_aborted",
+                    status=status.get("status"),
                 )
+                return False
 
         except Exception as exc:
             write_event("client_activation_poll_error", error=str(exc))
 
         time.sleep(CLIENT_POLL_SECONDS)
+
+
+def current_experiment_status() -> Dict[str, Any]:
+    try:
+        response = requests.get(
+            f"{HUB_URL}/experiments/{RUN_ID}/status",
+            timeout=5,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:
+        write_event("client_status_check_failed", error=str(exc))
+        return {}
 
 
 if __name__ == "__main__":

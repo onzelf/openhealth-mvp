@@ -143,6 +143,24 @@ button {
   word-break: break-word;
 }
 
+.card-input {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: #0f172a;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.card-input:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
 .tabs {
   display: flex;
   gap: 8px;
@@ -206,6 +224,31 @@ summary {
   color: #1d4ed8;
 }
 
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.chart-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.chart-card h4 {
+  color: #12385f;
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.chart-frame {
+  height: 280px;
+  min-width: 0;
+}
+
 .scope {
   margin-top: 18px;
   border-radius: 14px;
@@ -238,6 +281,10 @@ summary {
 
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
   }
 }
 

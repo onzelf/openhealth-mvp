@@ -75,6 +75,7 @@ class ExperimentInitialiseRequest(BaseModel):
     dataset_subset: str = DATASET_SUBSET
     rounds: int = FLOWER_ROUNDS
     min_clients: int = MIN_CLIENTS
+    local_epochs: int = int(os.getenv("LOCAL_EPOCHS", "1"))
 
 class ClientRegistration(BaseModel):
     run_id: str = RUN_ID
@@ -195,7 +196,7 @@ def write_experiment_config(req: ExperimentInitialiseRequest) -> None:
         "aggregation_strategy": "FedAvg",
         "rounds": req.rounds,
         "min_clients": req.min_clients,
-        "local_epochs": int(os.getenv("LOCAL_EPOCHS", "1")),
+        "local_epochs": req.local_epochs,
         "batch_size": int(os.getenv("BATCH_SIZE", "32")),
         "learning_rate": float(os.getenv("LEARNING_RATE", "0.001")),
         "flower_backend_url": FLOWER_BACKEND_URL,
@@ -222,6 +223,12 @@ def ensure_metrics_file(run_id: str = RUN_ID) -> None:
     path = run_dir(run_id) / "metrics.csv"
     if path.exists():
         return
+
+    write_metrics_header(run_id)
+
+
+def write_metrics_header(run_id: str = RUN_ID) -> None:
+    path = run_dir(run_id) / "metrics.csv"
 
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -271,6 +278,7 @@ Not implemented:
 - Dataset subset: `{req.dataset_subset}`
 - Aggregation strategy: `FedAvg`
 - Rounds: `{req.rounds}`
+- Local epochs: `{req.local_epochs}`
 - Minimum clients: `{req.min_clients}`
 - Governance mode: `{GOVERNANCE_MODE}`
 - FCaC enabled: `{FCAC_ENABLED}`
@@ -331,6 +339,7 @@ def initialise_default_run() -> None:
         dataset_subset=DATASET_SUBSET,
         rounds=FLOWER_ROUNDS,
         min_clients=MIN_CLIENTS,
+        local_epochs=int(os.getenv("LOCAL_EPOCHS", "1")),
     )
 
     write_experiment_config(req)
@@ -344,6 +353,7 @@ def initialise_default_run() -> None:
         dataset_subset=req.dataset_subset,
         rounds=req.rounds,
         min_clients=req.min_clients,
+        local_epochs=req.local_epochs,
         governance_mode=GOVERNANCE_MODE,
         fcac_enabled=FCAC_ENABLED,
     )
@@ -471,10 +481,18 @@ def backend_list() -> Dict[str, Any]:
 
 @app.post("/experiments/initialise")
 def experiments_initialise(req: ExperimentInitialiseRequest) -> Dict[str, Any]:
+    previous_status = experiment_state.get("status")
+
     write_experiment_config(req)
     write_participants(req.run_id)
-    ensure_metrics_file(req.run_id)
+    write_metrics_header(req.run_id)
     write_reproduce_readme(req)
+    experiment_state["status"] = "waiting"
+    experiment_state["run_id"] = req.run_id
+    if previous_status != "waiting":
+        experiment_state["registered_clients"] = {}
+    experiment_state["min_clients"] = req.min_clients
+    experiment_state["flower_server_ready"] = True
 
     call_governance(
         action="initialise_experiment",
@@ -488,6 +506,7 @@ def experiments_initialise(req: ExperimentInitialiseRequest) -> Dict[str, Any]:
         dataset_subset=req.dataset_subset,
         rounds=req.rounds,
         min_clients=req.min_clients,
+        local_epochs=req.local_epochs,
     )
 
     return {

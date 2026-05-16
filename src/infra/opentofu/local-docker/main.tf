@@ -134,7 +134,7 @@ resource "docker_container" "hub" {
 
   ports {
     internal = 8080
-    external = 8080
+    external = 8082
   }
 
   volumes {
@@ -312,7 +312,7 @@ output "runs_volume" {
 }
 
 output "hub_url" {
-  value = "http://localhost:8080"
+  value = "http://localhost:8082"
 }
 
 output "gatekeeper_url" {

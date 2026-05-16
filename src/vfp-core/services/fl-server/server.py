@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import time
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ RUNS_DIR = Path(os.getenv("RUNS_DIR", "/app/runs"))
 
 FLOWER_ROUNDS = int(os.getenv("FLOWER_ROUNDS", "3"))
 MIN_CLIENTS = int(os.getenv("MIN_CLIENTS", "2"))
+SERVER_POLL_SECONDS = int(os.getenv("SERVER_POLL_SECONDS", "1"))
 
 SERVER_ADDRESS = os.getenv("SERVER_ADDRESS", "0.0.0.0:8080")
 
@@ -54,6 +56,19 @@ def final_model_metadata_path() -> Path:
 
 def experiment_config_path() -> Path:
     return run_dir() / "experiment_config.json"
+
+
+def configured_rounds() -> int:
+    if not experiment_config_path().exists():
+        return FLOWER_ROUNDS
+
+    try:
+        config = json.loads(experiment_config_path().read_text(encoding="utf-8"))
+        rounds = int(config.get("rounds", FLOWER_ROUNDS))
+        return max(1, rounds)
+    except Exception as exc:
+        write_event("experiment_config_read_failed", error=str(exc))
+        return FLOWER_ROUNDS
 
 
 # ---------------------------------------------------------------------
@@ -190,6 +205,50 @@ def notify_hub_completed() -> None:
             "hub_completion_notify_failed",
             error=str(exc),
         )
+
+
+def wait_for_experiment_start() -> None:
+    last_terminal_status: Optional[str] = None
+
+    write_event(
+        "server_waiting_for_start",
+        hub_url=HUB_URL,
+        poll_seconds=SERVER_POLL_SECONDS,
+    )
+
+    while True:
+        try:
+            response = requests.get(
+                f"{HUB_URL}/experiments/{RUN_ID}/status",
+                timeout=5,
+            )
+            response.raise_for_status()
+            status = response.json()
+
+            write_event(
+                "server_polled_experiment_status",
+                status=status.get("status"),
+                registered_client_count=status.get("registered_client_count"),
+                min_clients=status.get("min_clients"),
+            )
+
+            if status.get("status") == "running":
+                write_event("server_activation_received")
+                return
+
+            if status.get("status") in {"stopped", "completed", "failed"}:
+                terminal_status = status.get("status")
+                if terminal_status != last_terminal_status:
+                    write_event(
+                        "server_waiting_for_reset",
+                        status=terminal_status,
+                    )
+                    last_terminal_status = terminal_status
+
+        except Exception as exc:
+            write_event("server_activation_poll_error", error=str(exc))
+
+        time.sleep(SERVER_POLL_SECONDS)
 
 # ---------------------------------------------------------------------
 # Metric aggregation
@@ -372,6 +431,17 @@ def main() -> None:
         strategy="FedAvg",
     )
 
+    wait_for_experiment_start()
+    rounds = configured_rounds()
+
+    write_event(
+        "server_starting_flower",
+        server_address=SERVER_ADDRESS,
+        flower_rounds=rounds,
+        min_clients=MIN_CLIENTS,
+        strategy="FedAvg",
+    )
+
     strategy = EvidenceFedAvg(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
@@ -384,14 +454,14 @@ def main() -> None:
 
     fl.server.start_server(
         server_address=SERVER_ADDRESS,
-        config=fl.server.ServerConfig(num_rounds=FLOWER_ROUNDS),
+        config=fl.server.ServerConfig(num_rounds=rounds),
         strategy=strategy,
     )
 
-    write_final_model_metadata(rounds_completed=FLOWER_ROUNDS)
+    write_final_model_metadata(rounds_completed=rounds)
     write_event(
         "server_completed",
-        flower_rounds=FLOWER_ROUNDS,
+        flower_rounds=rounds,
     )
     notify_hub_completed()
 
