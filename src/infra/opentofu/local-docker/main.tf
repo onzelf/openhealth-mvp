@@ -1,4 +1,4 @@
- terraform {
+terraform {
   required_version = ">= 1.6.0"
 
   required_providers {
@@ -177,9 +177,9 @@ resource "docker_image" "flower_server" {
 }
 
 resource "docker_container" "flower_server" {
-  name     = "vfp-core-flower-server"
-  image    = docker_image.flower_server.image_id
-  
+  name  = "vfp-core-flower-server"
+  image = docker_image.flower_server.image_id
+
 
   networks_advanced {
     name = docker_network.vfp.name
@@ -206,8 +206,8 @@ resource "docker_container" "flower_server" {
   ]
 
   depends_on = [docker_container.gatekeeper, docker_container.hub]
-  must_run = true
-  restart = "unless-stopped"
+  must_run   = true
+  restart    = "unless-stopped"
 }
 
 # ------------------------------------------------------------
@@ -225,9 +225,9 @@ resource "docker_image" "flower_client" {
 resource "docker_container" "flower_client" {
   for_each = local.enabled_orgs
 
-  name     = "vfp-core-flower-client-${each.key}"
-  image    = docker_image.flower_client.image_id
-   
+  name  = "vfp-core-flower-client-${each.key}"
+  image = docker_image.flower_client.image_id
+
 
   networks_advanced {
     name = docker_network.vfp.name
@@ -256,8 +256,8 @@ resource "docker_container" "flower_client" {
   ]
 
   depends_on = [docker_container.flower_server]
-  must_run = true
-  restart  = "no"
+  must_run   = true
+  restart    = "no"
 }
 
 
@@ -266,7 +266,7 @@ resource "docker_container" "flower_client" {
 # ------------------------------------------------------------
 
 resource "docker_image" "frontend" {
-  name = "vfp-core-frontend:local"
+  name = "vfp-core-frontend:v0.3.2-react-vite"
 
   build {
     context = "${local.repo_root}/vfp-core/frontend"
