@@ -174,3 +174,51 @@ Limitations:
 - experiment parameters are displayed but not yet fully editable;
 - metrics are table-based rather than graph-based;
 - Grafana/Prometheus observability is deferred to a later milestone.
+
+### Milestone 3.2 — React/Vite dashboard
+
+Status: completed.
+
+Milestone 3.2 replaces the original static dashboard with the current React/Vite dashboard while preserving the same local MVP scope. The dashboard remains a lightweight one-run control and evidence view, but now provides a more maintainable frontend structure and richer metric presentation.
+
+This milestone adds:
+
+- React/Vite frontend served through the existing nginx container;
+- START/status/events/configuration/evidence views preserved from the static dashboard;
+- editable `Rounds` and `Local epochs` before experiment start;
+- Recharts-based accuracy and loss charts over rounds;
+- fixed x-axis round range based on the configured total rounds;
+- the existing metrics table retained below the charts;
+- safe handling of missing metric values while rounds are still in progress.
+
+This remains a frontend-focused MVP dashboard. It does not introduce Grafana, Prometheus, authentication, or additional services.
+
+### Milestone 3.3 — Reset-safe local runs
+
+Status: completed.
+
+Milestone 3.3 makes repeated local demo runs reliable after a completed experiment. It hardens the reset/start lifecycle so the same OpenTofu-managed Docker stack can be reset, restarted, and used for another run without stale metrics, stale hub state, or client registration loss.
+
+This milestone adds:
+
+- `/experiments/initialise` resets run artefacts and runtime state safely;
+- metrics are cleared to a header-only file before a new run;
+- waiting client registrations are preserved when START reapplies the current config;
+- clients re-register if they detect that the hub no longer lists them;
+- Flower clients retry transient connection failures while the server gRPC listener is starting;
+- the Flower server waits cleanly for hub activation and avoids noisy restart loops after terminal runs;
+- local hub/frontend examples use port `8082` to avoid host port collisions.
+
+Recommended reset command for a final local check:
+
+```bash
+cd src/infra/opentofu/local-docker
+tofu apply \
+  -replace=docker_container.hub \
+  -replace=docker_container.flower_server \
+  -replace='docker_container.flower_client["org_a"]' \
+  -replace='docker_container.flower_client["org_b"]' \
+  -auto-approve
+```
+
+After reset, open `http://localhost:3000`, wait for `Registered clients 2 / 2`, then press **START EXPERIMENT**.
