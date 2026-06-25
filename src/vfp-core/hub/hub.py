@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,11 +27,15 @@ MIN_CLIENTS = int(os.getenv("MIN_CLIENTS", "2"))
 FLOWER_BACKEND_URL = os.getenv("FLOWER_BACKEND_URL", "vfp-core-flower-server:8080")
 GOVERNANCE_URL = os.getenv(
     "GOVERNANCE_URL",
-    "http://vfp-governance-gatekeeper:8080/admission/check",
+    "http://vfp-governance-gatekeeper:9000/admission/check",
 )
 
 GOVERNANCE_MODE = os.getenv("GOVERNANCE_MODE", "pass_through")
 FCAC_ENABLED = os.getenv("FCAC_ENABLED", "false").lower() == "true"
+FCAC_ECT = os.getenv("FCAC_ECT")
+FCAC_HOLDER_SUB = os.getenv("FCAC_HOLDER_SUB", "openhealth-hub")
+FCAC_DPOP_NONCE = os.getenv("FCAC_DPOP_NONCE", "openhealth-local-nonce")
+SIGNER_URL = os.getenv("SIGNER_URL", "").rstrip("/")
 
 ORGS_JSON = os.getenv("ORGS_JSON", "{}")
 
@@ -300,17 +305,70 @@ The local deployment is managed by OpenTofu with the Docker provider.
     path.write_text(content, encoding="utf-8")
 
 
+def governance_purpose(action: str) -> str:
+    if action in {"initialise_experiment", "register_backend", "start_experiment"}:
+        return "experiment_lifecycle"
+    if action == "evaluate":
+        return "federated_evaluation"
+    return "federated_training"
+
+
+def governance_headers(jti: str) -> Dict[str, str]:
+    if not (FCAC_ENABLED and FCAC_ECT):
+        return {}
+
+    headers = {
+        "Authorization": f"ECT {FCAC_ECT}",
+        "X-DPoP-Nonce": FCAC_DPOP_NONCE,
+    }
+
+    if SIGNER_URL:
+        try:
+            response = requests.post(
+                f"{SIGNER_URL}/dpop/sign",
+                json={
+                    "sub": FCAC_HOLDER_SUB,
+                    "htu": GOVERNANCE_URL,
+                    "htm": "POST",
+                    "jti": jti,
+                    "nonce": FCAC_DPOP_NONCE,
+                },
+                timeout=5,
+            )
+            response.raise_for_status()
+            headers["DPoP"] = response.json()["dpop"]
+        except Exception as exc:
+            append_event(
+                "governance_dpop_unavailable",
+                error=str(exc),
+            )
+
+    return headers
+
+
 def call_governance(action: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    request_metadata = metadata or {}
+    jti = request_metadata.get("jti") or f"openhealth-hub-{uuid.uuid4().hex}"
+    request_metadata = {
+        **request_metadata,
+        "purpose": request_metadata.get("purpose") or governance_purpose(action),
+        "jti": jti,
+    }
     payload = {
         "participant_id": "vfp-core-hub",
         "action": action,
         "resource": "openhealth-vfp-mvp",
         "experiment_id": RUN_ID,
-        "metadata": metadata or {},
+        "metadata": request_metadata,
     }
 
     try:
-        response = requests.post(GOVERNANCE_URL, json=payload, timeout=5)
+        response = requests.post(
+            GOVERNANCE_URL,
+            json=payload,
+            headers=governance_headers(jti),
+            timeout=5,
+        )
         response.raise_for_status()
         result = response.json()
         append_event(

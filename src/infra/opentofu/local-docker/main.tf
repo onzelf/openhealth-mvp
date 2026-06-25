@@ -18,13 +18,14 @@ provider "docker" {}
 # OpenTofu is the deployment authority.
 #
 # Services:
-# - vfp-governance-gatekeeper: pass-through governance placeholder
+# - vfp-governance-gatekeeper: FLICS-compatible admission verifier
+# - vfp-governance-verifier-proxy: local mTLS edge for verifier checks
+# - vfp-governance-issuer-* / holder-signer / redis: FLICS governance support
 # - vfp-core-hub: FastAPI orchestrator / coordination service
 # - vfp-core-flower-server: Flower aggregation backend
 # - vfp-core-flower-client-* : organisation-side FL clients
 #
-# FCaC is not implemented here.
-# vfp-governance is placeholder only.
+# FCaC is disabled by default for backwards-compatible local MVP runs.
 # ------------------------------------------------------------
 
 locals {
@@ -75,9 +76,35 @@ resource "docker_volume" "runs" {
   name = "vfp-runs"
 }
 
+resource "docker_volume" "issuer_registry_org_a" {
+  name = "vfp-issuer-registry-org-a"
+}
+
+resource "docker_volume" "issuer_registry_org_b" {
+  name = "vfp-issuer-registry-org-b"
+}
+
 # ------------------------------------------------------------
-# vfp-governance: gatekeeper placeholder
+# vfp-governance: FLICS governance substrate
 # ------------------------------------------------------------
+
+resource "docker_image" "redis" {
+  name         = "redis:7-alpine"
+  keep_locally = true
+}
+
+resource "docker_container" "redis" {
+  name  = "vfp-governance-redis"
+  image = docker_image.redis.name
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["redis"]
+  }
+
+  must_run = true
+  restart  = "unless-stopped"
+}
 
 resource "docker_image" "gatekeeper" {
   name = "vfp-governance-gatekeeper:local"
@@ -92,12 +119,14 @@ resource "docker_container" "gatekeeper" {
   image = docker_image.gatekeeper.image_id
 
   networks_advanced {
-    name = docker_network.vfp.name
+    name    = docker_network.vfp.name
+    aliases = ["verifier-app"]
   }
 
   ports {
-    internal = 8080
+    internal = 9000
     external = 8081
+    ip       = "127.0.0.1"
   }
 
   volumes {
@@ -105,11 +134,217 @@ resource "docker_container" "gatekeeper" {
     container_path = "/app/runs"
   }
 
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/state"
+    container_path = "/app/state"
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/app/verifier/certs"
+    read_only      = true
+  }
+
   env = [
     "RUN_ID=${local.run_id}",
     "RUNS_DIR=/app/runs",
-    "GOVERNANCE_MODE=pass_through"
+    "GOVERNANCE_MODE=pass_through",
+    "FCAC_ENABLED=false",
+    "FCAC_STATE_DIR=/app/state",
+    "FCAC_CERTS_DIR=/app/verifier/certs",
+    "REDIS_URL=redis://vfp-governance-redis:6379/0",
+    "FCAC_ENVELOPE_CHANNEL=fcac:envelopes:created",
+    "REQUIRE_MTLS_HEADERS=true",
+    "ISS=http://vfp-governance-gatekeeper:9000",
+    "AUD=svc:openhealth-vfp-local"
   ]
+
+  depends_on = [docker_container.redis]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+resource "docker_image" "verifier_proxy" {
+  name = "vfp-governance-verifier-proxy:local"
+
+  build {
+    context = "${local.repo_root}/vfp-governance/verifier/nginx"
+  }
+}
+
+resource "docker_container" "verifier_proxy" {
+  name  = "vfp-governance-verifier-proxy"
+  image = docker_image.verifier_proxy.image_id
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["verifier.local"]
+  }
+
+  ports {
+    internal = 8443
+    external = 8443
+    ip       = "127.0.0.1"
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/etc/nginx/certs"
+    read_only      = true
+  }
+
+  depends_on = [docker_container.gatekeeper]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+resource "docker_image" "holder_signer" {
+  name = "vfp-governance-holder-signer:local"
+
+  build {
+    context = "${local.repo_root}/vfp-governance/signer"
+  }
+}
+
+resource "docker_container" "holder_signer" {
+  name  = "vfp-governance-holder-signer"
+  image = docker_image.holder_signer.image_id
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["holder-signer"]
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/vault/holder_keys"
+    container_path = "/vault/holder_keys"
+    read_only      = true
+  }
+
+  env = [
+    "HOLDER_KEYS_DIR=/vault/holder_keys"
+  ]
+
+  must_run = true
+  restart  = "unless-stopped"
+}
+
+resource "docker_image" "issuer" {
+  name = "vfp-governance-issuer:local"
+
+  build {
+    context = "${local.repo_root}/vfp-governance/issuers"
+  }
+}
+
+resource "docker_container" "issuer_org_a" {
+  name  = "vfp-governance-issuer-org-a"
+  image = docker_image.issuer.image_id
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["issuer-hospitala"]
+  }
+
+  volumes {
+    volume_name    = docker_volume.issuer_registry_org_a.name
+    container_path = "/vault/registry"
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/run/certs"
+    read_only      = true
+  }
+
+  env = [
+    "ORG=org://HospitalA",
+    "VERIFIER_URL=https://verifier.local:8443",
+    "CA_CRT=/run/certs/ca.crt",
+    "VERIFY_TLS=1",
+    "ADMIN_CRT=/run/certs/HospitalA-admin.crt",
+    "ADMIN_KEY=/run/certs/HospitalA-admin.key",
+    "REGISTRY_DIR=/vault/registry",
+    "CAP_PROFILE_PATH=/app/config/cap_profiles.json"
+  ]
+
+  depends_on = [docker_container.verifier_proxy]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+resource "docker_container" "issuer_org_b" {
+  name  = "vfp-governance-issuer-org-b"
+  image = docker_image.issuer.image_id
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["issuer-hospitalb"]
+  }
+
+  volumes {
+    volume_name    = docker_volume.issuer_registry_org_b.name
+    container_path = "/vault/registry"
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/run/certs"
+    read_only      = true
+  }
+
+  env = [
+    "ORG=org://HospitalB",
+    "VERIFIER_URL=https://verifier.local:8443",
+    "CA_CRT=/run/certs/ca.crt",
+    "VERIFY_TLS=1",
+    "ADMIN_CRT=/run/certs/HospitalB-admin.crt",
+    "ADMIN_KEY=/run/certs/HospitalB-admin.key",
+    "REGISTRY_DIR=/vault/registry",
+    "CAP_PROFILE_PATH=/app/config/cap_profiles.json"
+  ]
+
+  depends_on = [docker_container.verifier_proxy]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+resource "docker_image" "issuer_proxy" {
+  name = "vfp-governance-issuer-proxy:local"
+
+  build {
+    context = "${local.repo_root}/vfp-governance/issuers/nginx"
+  }
+}
+
+resource "docker_container" "issuer_proxy" {
+  name  = "vfp-governance-issuer-proxy"
+  image = docker_image.issuer_proxy.image_id
+
+  networks_advanced {
+    name    = docker_network.vfp.name
+    aliases = ["issuer-hospitala.local", "issuer-hospitalb.local"]
+  }
+
+  ports {
+    internal = 8443
+    external = 9443
+    ip       = "127.0.0.1"
+  }
+
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/etc/nginx/certs"
+    read_only      = true
+  }
+
+  depends_on = [
+    docker_container.issuer_org_a,
+    docker_container.issuer_org_b
+  ]
+
+  must_run = true
+  restart  = "unless-stopped"
 }
 
 # ------------------------------------------------------------
@@ -142,6 +377,12 @@ resource "docker_container" "hub" {
     container_path = "/app/runs"
   }
 
+  volumes {
+    host_path      = "${local.repo_root}/vfp-governance/verifier/certs"
+    container_path = "/run/certs"
+    read_only      = true
+  }
+
   env = [
     "RUN_ID=${local.run_id}",
     "LOCAL_EPOCHS=1",
@@ -154,13 +395,21 @@ resource "docker_container" "hub" {
     "MIN_CLIENTS=${length(local.enabled_orgs)}",
     "ORGS_JSON=${jsonencode(local.enabled_orgs)}",
     "FLOWER_BACKEND_URL=vfp-core-flower-server:8080",
-    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check",
+    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:9000/admission/check",
     "GOVERNANCE_MODE=pass_through",
-    "FCAC_ENABLED=false"
+    "FCAC_ENABLED=false",
+    "VERIFIER_URL=https://verifier.local:8443",
+    "VERIFY_TLS=0",
+    "HUB_CERT_CRT=/run/certs/hub.crt",
+    "HUB_CERT_KEY=/run/certs/hub.key",
+    "SIGNER_URL=http://holder-signer:8090",
+    "FCAC_HOLDER_SUB=openhealth-hub",
+    "FCAC_DPOP_NONCE=openhealth-local-nonce"
   ]
 
   depends_on = [
-    docker_container.gatekeeper
+    docker_container.gatekeeper,
+    docker_container.holder_signer
   ]
 }
 
@@ -201,7 +450,7 @@ resource "docker_container" "flower_server" {
     "FLOWER_ROUNDS=${local.flower_rounds}",
     "MIN_CLIENTS=${length(local.enabled_orgs)}",
     "SERVER_ADDRESS=0.0.0.0:8080",
-    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check",
+    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:9000/admission/check",
     "HUB_URL=http://vfp-core-hub:8080"
   ]
 
@@ -252,10 +501,14 @@ resource "docker_container" "flower_client" {
     "BATCH_SIZE=32",
     "LEARNING_RATE=0.001",
     "FLOWER_SERVER_URL=vfp-core-flower-server:8080",
-    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:8080/admission/check"
+    "GOVERNANCE_URL=http://vfp-governance-gatekeeper:9000/admission/check",
+    "FCAC_ENABLED=false",
+    "SIGNER_URL=http://holder-signer:8090",
+    "FCAC_HOLDER_SUB=${each.key}",
+    "FCAC_DPOP_NONCE=openhealth-local-nonce"
   ]
 
-  depends_on = [docker_container.flower_server]
+  depends_on = [docker_container.flower_server, docker_container.holder_signer]
   must_run   = true
   restart    = "no"
 }
@@ -317,6 +570,14 @@ output "hub_url" {
 
 output "gatekeeper_url" {
   value = "http://localhost:8081"
+}
+
+output "verifier_mtls_url" {
+  value = "https://localhost:8443"
+}
+
+output "issuer_mtls_url" {
+  value = "https://localhost:9443"
 }
 
 output "flower_server_url" {

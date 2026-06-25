@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -36,8 +37,13 @@ NUM_PARTITIONS = int(os.getenv("NUM_PARTITIONS", "2"))
 FLOWER_SERVER_URL = os.getenv("FLOWER_SERVER_URL", "http://vfp-core-flower-server:8080")
 GOVERNANCE_URL = os.getenv(
     "GOVERNANCE_URL",
-    "http://vfp-governance-gatekeeper:8080/admission/check",
+    "http://vfp-governance-gatekeeper:9000/admission/check",
 )
+FCAC_ENABLED = os.getenv("FCAC_ENABLED", "false").lower() == "true"
+FCAC_ECT = os.getenv("FCAC_ECT")
+FCAC_HOLDER_SUB = os.getenv("FCAC_HOLDER_SUB", ORG_ID)
+FCAC_DPOP_NONCE = os.getenv("FCAC_DPOP_NONCE", "openhealth-local-nonce")
+SIGNER_URL = os.getenv("SIGNER_URL", "").rstrip("/")
 
 DATASET_FLAG = os.getenv("MEDMNIST_DATASET", "pneumoniamnist")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
@@ -117,7 +123,44 @@ def write_event(event_type: str, **kwargs: Any) -> None:
         f.write(json.dumps(safe_event) + "\n") 
 
 
+def governance_purpose(action: str) -> str:
+    if action == "evaluate":
+        return "federated_evaluation"
+    return "federated_training"
+
+
+def governance_headers(jti: str) -> Dict[str, str]:
+    if not (FCAC_ENABLED and FCAC_ECT):
+        return {}
+
+    headers = {
+        "Authorization": f"ECT {FCAC_ECT}",
+        "X-DPoP-Nonce": FCAC_DPOP_NONCE,
+    }
+
+    if SIGNER_URL:
+        try:
+            response = requests.post(
+                f"{SIGNER_URL}/dpop/sign",
+                json={
+                    "sub": FCAC_HOLDER_SUB,
+                    "htu": GOVERNANCE_URL,
+                    "htm": "POST",
+                    "jti": jti,
+                    "nonce": FCAC_DPOP_NONCE,
+                },
+                timeout=5,
+            )
+            response.raise_for_status()
+            headers["DPoP"] = response.json()["dpop"]
+        except Exception as exc:
+            write_event("governance_dpop_unavailable", error=str(exc))
+
+    return headers
+
+
 def admission_check(action: str, resource: str = "medmnist-baseline") -> Dict[str, Any]:
+    jti = f"{ORG_ID}-{uuid.uuid4().hex}"
     payload = {
         "participant_id": ORG_ID,
         "action": action,
@@ -127,11 +170,18 @@ def admission_check(action: str, resource: str = "medmnist-baseline") -> Dict[st
             "org_label": ORG_LABEL,
             "data_partition": DATA_PARTITION,
             "dataset": DATASET_FLAG,
+            "purpose": governance_purpose(action),
+            "jti": jti,
         },
     }
 
     try:
-        response = requests.post(GOVERNANCE_URL, json=payload, timeout=5)
+        response = requests.post(
+            GOVERNANCE_URL,
+            json=payload,
+            headers=governance_headers(jti),
+            timeout=5,
+        )
         response.raise_for_status()
         result = response.json()
         write_event("admission_response", action=action, response=result)
