@@ -20,7 +20,7 @@ provider "docker" {}
 # Services:
 # - vfp-governance-gatekeeper: FLICS-compatible admission verifier
 # - vfp-governance-verifier-proxy: local mTLS edge for verifier checks
-# - vfp-governance-issuer-* / holder-signer / redis: FLICS governance support
+# - vfp-core-issuer-* / holder-signer / redis: FLICS governance support
 # - vfp-core-hub: FastAPI orchestrator / coordination service
 # - vfp-core-flower-server: Flower aggregation backend
 # - vfp-core-flower-client-* : organisation-side FL clients
@@ -148,8 +148,8 @@ resource "docker_container" "gatekeeper" {
   env = [
     "RUN_ID=${local.run_id}",
     "RUNS_DIR=/app/runs",
-    "GOVERNANCE_MODE=pass_through",
-    "FCAC_ENABLED=false",
+    "GOVERNANCE_MODE=strict",
+    "FCAC_ENABLED=true",
     "FCAC_STATE_DIR=/app/state",
     "FCAC_CERTS_DIR=/app/verifier/certs",
     "REDIS_URL=redis://vfp-governance-redis:6379/0",
@@ -230,15 +230,15 @@ resource "docker_container" "holder_signer" {
 }
 
 resource "docker_image" "issuer" {
-  name = "vfp-governance-issuer:local"
+  name = "vfp-core-issuer:local"
 
   build {
-    context = "${local.repo_root}/vfp-governance/issuers"
+    context = "${local.repo_root}/vfp-core/issuers"
   }
 }
 
 resource "docker_container" "issuer_org_a" {
-  name  = "vfp-governance-issuer-org-a"
+  name  = "vfp-core-issuer-org-a"
   image = docker_image.issuer.image_id
 
   networks_advanced {
@@ -274,7 +274,7 @@ resource "docker_container" "issuer_org_a" {
 }
 
 resource "docker_container" "issuer_org_b" {
-  name  = "vfp-governance-issuer-org-b"
+  name  = "vfp-core-issuer-org-b"
   image = docker_image.issuer.image_id
 
   networks_advanced {
@@ -310,15 +310,15 @@ resource "docker_container" "issuer_org_b" {
 }
 
 resource "docker_image" "issuer_proxy" {
-  name = "vfp-governance-issuer-proxy:local"
+  name = "vfp-core-issuer-proxy:local"
 
   build {
-    context = "${local.repo_root}/vfp-governance/issuers/nginx"
+    context = "${local.repo_root}/vfp-core/issuers/nginx"
   }
 }
 
 resource "docker_container" "issuer_proxy" {
-  name  = "vfp-governance-issuer-proxy"
+  name  = "vfp-core-issuer-proxy"
   image = docker_image.issuer_proxy.image_id
 
   networks_advanced {
@@ -396,8 +396,8 @@ resource "docker_container" "hub" {
     "ORGS_JSON=${jsonencode(local.enabled_orgs)}",
     "FLOWER_BACKEND_URL=vfp-core-flower-server:8080",
     "GOVERNANCE_URL=http://vfp-governance-gatekeeper:9000/admission/check",
-    "GOVERNANCE_MODE=pass_through",
-    "FCAC_ENABLED=false",
+    "GOVERNANCE_MODE=strict",
+    "FCAC_ENABLED=true",
     "VERIFIER_URL=https://verifier.local:8443",
     "VERIFY_TLS=0",
     "HUB_CERT_CRT=/run/certs/hub.crt",
@@ -502,7 +502,7 @@ resource "docker_container" "flower_client" {
     "LEARNING_RATE=0.001",
     "FLOWER_SERVER_URL=vfp-core-flower-server:8080",
     "GOVERNANCE_URL=http://vfp-governance-gatekeeper:9000/admission/check",
-    "FCAC_ENABLED=false",
+    "FCAC_ENABLED=true",
     "SIGNER_URL=http://holder-signer:8090",
     "FCAC_HOLDER_SUB=${each.key}",
     "FCAC_DPOP_NONCE=openhealth-local-nonce"

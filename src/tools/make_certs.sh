@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Where to write certs (relative to src/vfp-governance/tools)
-CERT_DIR="$(cd "$(dirname "$0")/.."; pwd)/verifier/certs"
+# Where to write certs (relative to repo root)
+CERT_DIR="$(cd "$(dirname "$0")/.."; pwd)/vfp-governance/verifier/certs"
 mkdir -p "$CERT_DIR"
 cd "$CERT_DIR"
 
