@@ -1,11 +1,9 @@
 {
   "org://HospitalA": {
-    "OPENHEALTH_FULL": "capset:openhealth_full",
-    "OPENHEALTH_CLIENT": "capset:openhealth_client",
-    "OPENHEALTH_HUB": "capset:openhealth_hub"
+    "PATHMNIST_HUB": "capset:pathmnist_hub",
+    "PATHMNIST_PARTICIPANT": "capset:pathmnist_participant"
   },
   "org://HospitalB": {
-    "OPENHEALTH_FULL": "capset:openhealth_full",
-    "OPENHEALTH_CLIENT": "capset:openhealth_client"
+    "PATHMNIST_PARTICIPANT": "capset:pathmnist_participant"
   }
 }

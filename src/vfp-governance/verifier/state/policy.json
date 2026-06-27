@@ -1,5 +1,6 @@
 {
-  "version": "openhealth-v0.4",
+  "version": "openhealth-pathmnist-ab-v1",
+
   "ops": {
     "initialise_experiment": {
       "resource": "openhealth-vfp-mvp",
@@ -17,47 +18,37 @@
       "purpose": "experiment_lifecycle"
     },
     "join_experiment": {
-      "resource": "medmnist-baseline",
+      "resource": "pathmnist-colon-pathology",
       "action": "join_experiment",
       "purpose": "federated_training"
     },
     "train_local": {
-      "resource": "medmnist-baseline",
+      "resource": "pathmnist-colon-pathology",
       "action": "train_local",
       "purpose": "federated_training"
     },
     "submit_update": {
-      "resource": "medmnist-baseline",
+      "resource": "pathmnist-colon-pathology",
       "action": "submit_update",
       "purpose": "federated_training"
     },
     "evaluate": {
-      "resource": "medmnist-baseline",
+      "resource": "pathmnist-colon-pathology",
       "action": "evaluate",
       "purpose": "federated_evaluation"
     }
   },
+
   "cap_profiles": {
-    "capset:openhealth_hub": {
+    "capset:pathmnist_hub": {
       "cap": [
         "initialise_experiment",
         "register_backend",
         "start_experiment"
       ]
     },
-    "capset:openhealth_client": {
+    "capset:pathmnist_participant": {
       "cap": [
-        "join_experiment",
-        "train_local",
-        "submit_update",
-        "evaluate"
-      ]
-    },
-    "capset:openhealth_full": {
-      "cap": [
-        "initialise_experiment",
-        "register_backend",
-        "start_experiment",
         "join_experiment",
         "train_local",
         "submit_update",
@@ -65,19 +56,82 @@
       ]
     }
   },
+
   "cap_profiles_default": [
-    "capset:openhealth_full"
+    "capset:pathmnist_participant"
   ],
+
   "caveats": {
     "audience": "svc:openhealth-vfp-local",
     "prohibitions": []
   },
+
   "meta": {
-    "policy_id": "POL-OPENHEALTH-VFP-LOCAL",
-    "manifest_id": "gov-manifest-openhealth-v0.4",
+    "policy_id": "POL-OPENHEALTH-PATHMNIST-AB",
+    "manifest_id": "gov-manifest-pathmnist-ab-v1",
+
+    "dataset": {
+      "id": "pathmnist",
+      "domain": "colon_pathology",
+      "task": "multi-class",
+      "label_dictionary": {
+        "0": "adipose",
+        "1": "background",
+        "2": "debris",
+        "3": "lymphocytes",
+        "4": "mucus",
+        "5": "smooth muscle",
+        "6": "normal colon mucosa",
+        "7": "cancer-associated stroma",
+        "8": "colorectal adenocarcinoma epithelium"
+      }
+    },
+
+    "baseline_federation": {
+      "founders": [
+        "org://HospitalA",
+        "org://HospitalB"
+      ],
+
+      "org://HospitalA": {
+        "role": "coordinator_and_participant",
+        "contribution_scope": [
+          "adipose",
+          "background",
+          "debris"
+        ],
+        "query_scope": [
+          "adipose",
+          "background",
+          "debris",
+          "lymphocytes",
+          "mucus",
+          "smooth muscle"
+        ]
+      },
+
+      "org://HospitalB": {
+        "role": "participant",
+        "contribution_scope": [
+          "lymphocytes",
+          "mucus",
+          "smooth muscle"
+        ],
+        "query_scope": [
+          "adipose",
+          "background",
+          "debris",
+          "lymphocytes",
+          "mucus",
+          "smooth muscle"
+        ]
+      }
+    },
+
     "notes": [
-      "Local OpenHealth VFP governance policy adapted from FLICS session admission.",
-      "Controls map to the existing OpenHealth hub and Flower client admission actions."
+      "Hospitals A and B constitute the initial two-founder PathMNIST federation.",
+      "Contribution and query scopes are committed to the policy but are not yet enforced by the current verifier.",
+      "PathMNIST labels 6-8 remain outside the initial federation training coverage."
     ]
   }
-}
+} 
